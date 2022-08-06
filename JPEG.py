@@ -22,6 +22,7 @@ class JPEG():
         self.image = self.resize_shift_image(self.image, np.ceil(self.image.shape[0]/8)*8, np.ceil(self.image.shape[1]/8)*8)
         self.height = self.image.shape[0]
         self.width = self.image.shape[1]
+        self.block_size = 8
         if self.image.ndim == 3:
             self.ColorImage = True
             self.channel = 3
@@ -63,6 +64,9 @@ class JPEG():
             "AC": [[], []]
         }
 
+    def showOriginImage(self):
+        plt.imshow(self.image)
+
     def useDefineTable(self):
         if len(self.STD_HuffmanTable["DC"]) * len(self.STD_HuffmanTable["AC"]) == 0:
             raise Error("huffmanTable is undefined")
@@ -89,7 +93,6 @@ class JPEG():
 
     def encode(self, quality=100, save_path="./", isColor=True, block_size=8, finished_info=dict(), showProcessingLog=False):
         self.quality = quality
-        self.block_size = block_size
 
         if isColor & self.ColorImage:
             self.ColorImage = True
@@ -117,7 +120,7 @@ class JPEG():
         if showProcessingLog:
             print("# (1/7) ImageToYCbCr")
         total_start = start = time.time()
-        self._img2ycbcr(isColor=self.ColorImage, showOutput=True)
+        self._img2ycbcr(isColor=self.ColorImage)
         if showProcessingLog:
             print("used %.3f sec" % (time.time() - start))
             print("# (2/7) YCbCr DCT")
