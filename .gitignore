@@ -1,0 +1,7 @@
+# Localhost Test Image
+Img_local
+Techniques/**/Img_local
+
+# Python Catch
+__pycache__
+*/__pycache__

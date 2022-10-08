@@ -11,3 +11,7 @@ def psnr(img1, img2):
         return cv2.PSNR(np.copy(img1[:, :, 0:nd]).astype(np.float32), np.copy(img2[:, :, 0:nd]).astype(np.float32))
     except:
         return cv2.PSNR(np.copy(img1).astype(np.float32), np.copy(img2).astype(np.float32))
+
+def mse(img1, img2):
+    height, width = img1.shape[:2]
+    return np.sum((img1.astype(np.float64) - img2.astype(np.float64)) ** 2) / float(height * width)

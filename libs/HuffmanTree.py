@@ -128,7 +128,6 @@ class LimitedLenHuffmanTree:
             self.freq = freq
             self.left_child = left_child
             self.right_child = right_child
-            # self.textItemString = "{}{}".format(left_child.textItemString, right_child.textItemString) if value is None else str(value)
 
         @classmethod
         def init_leaf(self, value, freq):
@@ -169,7 +168,6 @@ class LimitedLenHuffmanTree:
         for val, freq in freq_dict.items():
             self.total_freq[val] = [freq]
             q.put(self.__Node.init_leaf(val, freq))
-            # print("baseNode:", val, freq)
 
         self.m = q.qsize()
         run_index = 0
@@ -180,12 +178,9 @@ class LimitedLenHuffmanTree:
             for _ in range((q.qsize()//2)):
                 u = q.get()
                 v = q.get()
-                ## print("## u={}:{}, v={}:{}".format(u.textItemString, u.freq, v.textItemString, v.freq))
                 newN = self.__Node.init_node(u, v)
-                ## print("### newN={}:{}".format(newN.textItemString, newN.freq))
                 newQ.put(newN)
             for val, freq in freq_dict.items():
-                # print("### origin={}:{}".format(val, freq))
                 newQ.put(self.__Node.init_leaf(val, freq))
             q = newQ
 
@@ -203,20 +198,17 @@ class LimitedLenHuffmanTree:
         self.codeLength_dict = dict()
         while self.LimitLengthQuere.qsize() > 0:
             n = self.LimitLengthQuere.get()
-            # print("# n: value={}, freq={}".format(n.value, n.freq))
             self.__calc_QuereFreq(n)
 
         return self.codeLength_dict
 
     def __calc_QuereFreq(self, n):
-        # print("## __calc_QuereFreq")
         if n.value is not None:
             sym = str(n.value)
             if sym in self.codeLength_dict:
                 self.codeLength_dict[sym] += 1
             else:
                 self.codeLength_dict[sym] = 1
-            # print("### sym={}, codeLength_dict[sym]={}".format(sym, self.codeLength_dict[sym]))
         else:
             self.__calc_QuereFreq(n.left_child)
             self.__calc_QuereFreq(n.right_child)
@@ -226,7 +218,6 @@ class LimitedLenHuffmanTree:
         huffman_total_table = list(self.total_freq.items())
         huffman_total_table.sort(key=lambda x: x[1][1]) ## sorted freq of arr
         huffman_total_table.sort(key=lambda x: x[1][0], reverse=True) ## sorted len of code
-        # print("huffman_total_table:", huffman_total_table)
         
         self.HuffmanTable = dict()
         code_len = huffman_total_table[0][1][1]

@@ -72,6 +72,12 @@ class JPEG():
             raise Error("huffmanTable is undefined")
         self.HuffmanTableTypeIndex = 1
 
+    def useStandardHuffmanTable(self):
+        self.setHuffmanTable(isAC=False, index=0, table=STD_HUFTAB_LUMIN_DC())
+        self.setHuffmanTable(isAC=False, index=1, table=STD_HUFTAB_CHROMIN_DC())
+        self.setHuffmanTable(isAC=True, index=0, table=STD_HUFTAB_LUMIN_AC())
+        self.setHuffmanTable(isAC=True, index=1, table=STD_HUFTAB_CHROMIN_AC())
+
     def setHuffmanTable(self, isAC, index, table):
         self.STD_HuffmanTable["AC" if isAC else "DC"][index] = table
         self.HuffmanTableTypeIndex = 0
@@ -90,10 +96,7 @@ class JPEG():
             new_image[lh:lh+h, lw:lw+w] = img[:, :]
         return new_image
 
-
-    def encode(self, quality=100, save_path="./", isColor=True, block_size=8, finished_info=dict(), showProcessingLog=False):
-        self.quality = quality
-
+    def ColorComp(self, isColor=True):
         if isColor & self.ColorImage:
             self.ColorImage = True
             self.channel = 3
@@ -117,6 +120,11 @@ class JPEG():
                 {'id': 1, "dc_table": 0, "ac_table": 0},
             ]
 
+    def encode(self, quality=100, save_path="./", isColor=True, block_size=8, finished_info=dict(), showProcessingLog=False):
+        self.quality = quality
+
+        self.ColorComp(isColor=isColor)
+
         if showProcessingLog:
             print("# (1/7) ImageToYCbCr")
         total_start = start = time.time()
@@ -125,7 +133,7 @@ class JPEG():
             print("used %.3f sec" % (time.time() - start))
             print("# (2/7) YCbCr DCT")
             start = time.time()
-        self._ycbcrDCT()
+        self._ycbcrFDCT()
         if showProcessingLog:
             print("used %.3f sec" % (time.time() - start))
             print("# (3/7) YCbCr Quant")
@@ -170,6 +178,20 @@ class JPEG():
 
         return save_image
 
+    def analize(self):
+        save_image = plt.imread(self.save_path)
+        finished_info = dict()
+        finished_info["date"] = time.time()
+        finished_info["file_path"] = self.save_path
+        finished_info["size"] = (self.height, self.width)
+        finished_info["quality"] = self.quality
+        finished_info["file_size"] = Path(self.save_path).stat().st_size
+        # finished_info["Huffman Encode Type"] = self.HuffmanTableType[self.HuffmanTableTypeIndex]
+        finished_info["compression_ratio"] = "{:.2%}".format(Path(self.origin_path).stat().st_size / finished_info["file_size"])
+        if self.image.ndim == save_image.ndim:
+            finished_info["PSNR"] = psnr(self.image, save_image)
+        return finished_info
+
     ## 1. YCbCr
     def _img2ycbcr(self, isColor=True, showOutput=False, DEBUG=False):
         if self.image.ndim == 3:
@@ -205,7 +227,7 @@ class JPEG():
         return np.stack((img, np.zeros(img.shape), np.zeros(img.shape)),axis=2)
 
     ## 2. DCT
-    def _ycbcrDCT(self, showOutput=False, DEBUG=False):
+    def _ycbcrFDCT(self, showOutput=False, DEBUG=False):
         self.dct = np.zeros((self.ycbcr.shape), dtype=self.valueDtype)
         f_image = np.array(self.ycbcr, dtype=self.valueDtype)
         for i in range(0, self.height, self.block_size):
@@ -229,6 +251,18 @@ class JPEG():
                 # axs[0, 1].imshow(np.log(np.abs(image_dct[:, :, 0])), cmap='gray')
             plt.show()
         return self.dct
+    def _ycbcrIDCT(self, showOutput=False, DEBUG=False):
+        self.idct = np.zeros((self.ycbcr.shape), dtype=self.valueDtype)
+        f_image = np.array(self.Dequant, dtype=self.valueDtype)
+        for i in range(0, self.height, self.block_size):
+            for j in range(0, self.width, self.block_size):
+                for k in range(self.channel):
+                    self.idct[i:i+self.block_size, j:j+self.block_size, k] = cv2.idct(f_image[i:i+self.block_size, j:j+self.block_size, k]+(128. if k == 0 else 0))
+                    if DEBUG:
+                        print("# MCU: ({}, {})".format(i, j))
+                        print("## comp:", k, "----------------------------------------------------")
+                        print(self.idct[i:i+self.block_size, j:j+self.block_size, k])
+        return self.idct
 
     ## 3. Quantization
     ### return qnanted ycbcr
@@ -237,6 +271,48 @@ class JPEG():
         self.quant = np.zeros(self.ycbcr.shape, dtype=self.fileDtype)
         for c in range(self.channel):
             self.quant[:, :, c] = np.around(self.dct[:, :, c]/np.tile(self.QuantizationTable[self.color_components[c]["Quantization_table_index"]], (self.height//8, self.width//8)))
+
+        if showOutput:
+            fig, axs = plt.subplots(3, 2, figsize=(10, 15))
+            axs[0, 0].set_title("Y - Original")
+            axs[0, 0].imshow(self.dct[:, :, 0])
+            axs[0, 0].axis('off')
+            axs[0, 1].set_title("Y - Quant, PSNR={:.4f}".format(psnr(self.dct[:, :, 0], self.quant[:, :, 0])))
+            axs[0, 1].imshow(self.quant[:, :, 0])
+            axs[0, 1].axis('off')
+            axs[1, 0].set_title("Cb - Original")
+            axs[1, 0].imshow(self.dct[:, :, 1])
+            axs[1, 0].axis('off')
+            axs[1, 1].set_title("Cb - Quant, PSNR={:.4f}".format(psnr(self.dct[:, :, 1], self.quant[:, :, 1])))
+            axs[1, 1].imshow(self.quant[:, :, 1])
+            axs[1, 1].axis('off')
+            axs[2, 0].set_title("Cr - Original")
+            axs[2, 0].imshow(self.dct[:, :, 2])
+            axs[2, 0].axis('off')
+            axs[2, 1].set_title("Cr - Quant, PSNR={:.4f}".format(psnr(self.dct[:, :, 2], self.quant[:, :, 2])))
+            axs[2, 1].imshow(self.quant[:, :, 2])
+            axs[2, 1].axis('off')
+            plt.show()
+        return self.quant
+    def _ycbcrDequant(self, showOutput=False, DEBUG=False):
+        self.QuantizationTable = self.quantizedTable(self.quality)
+        self.Dequant = np.zeros(self.quant.shape, dtype=self.fileDtype)
+        for c in range(self.channel):
+            self.Dequant[:, :, c] = np.around(self.quant[:, :, c]*np.tile(self.QuantizationTable[self.color_components[c]["Quantization_table_index"]], (self.height//8, self.width//8)))
+        return self.Dequant
+    def _ycbcrQuantforRDH(self, showOutput=False, DEBUG=False):
+        self.QuantizationTable = self.quantizedTable(self.quality)
+        self.quant = np.zeros(self.ycbcr.shape, dtype=self.fileDtype)
+        for c in range(self.channel):
+            quantized = self.dct[:, :, c]/np.tile(self.QuantizationTable[self.color_components[c]["Quantization_table_index"]], (self.height//8, self.width//8))
+            quantized_around = np.around(quantized)
+            shuffledBlocks = quantized[abs(quantized_around)==2]
+
+            shuffledBlocks[abs(quantized[abs(quantized_around)==2])>2] = 3
+            shuffledBlocks[abs(quantized[abs(quantized_around)==2])<=2] = 1
+
+            quantized_around[abs(quantized_around)==2] = shuffledBlocks
+            self.quant[:, :, c] = quantized_around
 
         if showOutput:
             fig, axs = plt.subplots(3, 2, figsize=(10, 15))
@@ -448,7 +524,78 @@ class JPEG():
         else:
             return "".join(ac_encoded)
 
+    ## HuffmanTable
+    def generateHuffmanTable(self, freq_Table, DEBUG=False):
+        Best_HuffmanTree = HuffmanTree(freq_Table)
+        if Best_HuffmanTree.mostLongCodeLen() <= 15:
+            return Best_HuffmanTree.create_huffman_table()
+        else:
+            Average_HuffmanTree = LimitedLenHuffmanTree(freq_Table)
+            return Average_HuffmanTree.create_huffman_table()
 
+    def stat_WordFreq(self):
+        stat_DCs = [[] for _ in range(max([comp["dc_table"] for comp in self.num_components])+1)]
+        stat_ACs = [[] for _ in range(max([comp["ac_table"] for comp in self.num_components])+1)]
+        for mcu in self.MCUs:
+            for comp_index in range(len(mcu)):
+                comp = mcu[comp_index]
+                stat_DCs[self.num_components[comp_index]["dc_table"]].append("{:02x}".format(self.binaryCode(comp["DPCM"])[0]))
+                for rle in comp["RLE"]:
+                    stat_ACs[self.num_components[comp_index]["ac_table"]].append("{}{}".format(hex(rle[0])[-1], hex(self.binaryCode(rle[1])[0])[-1]))
+
+        return stat_DCs, stat_ACs
+
+    def calc_WordFreq(self):
+        stat_DCs, stat_ACs = self.stat_WordFreq()
+        freq_DCs = [{} for _ in range(max([comp["dc_table"] for comp in self.num_components])+1)]
+        freq_ACs = [{} for _ in range(max([comp["ac_table"] for comp in self.num_components])+1)]
+        for i in range(len(stat_DCs)):
+            for j in range(len(stat_DCs[i])):
+                if stat_DCs[i][j] in freq_DCs[i]:
+                    freq_DCs[i][stat_DCs[i][j]] += 1
+                else:
+                    freq_DCs[i][stat_DCs[i][j]] = 1
+        for i in range(len(stat_ACs)):
+            for j in range(len(stat_ACs[i])):
+                if stat_ACs[i][j] in freq_ACs[i]:
+                    freq_ACs[i][stat_ACs[i][j]] += 1
+                else:
+                    freq_ACs[i][stat_ACs[i][j]] = 1
+        return freq_DCs, freq_ACs
+
+    def estimatedHuffmanEncoded(self, freq_Table, huffmanTable):
+        total_wordlen = 0
+        for key, freq in freq_Table.items():
+            total_wordlen += len(huffmanTable[key]*freq)
+        return total_wordlen
+
+    ## return the True is meaning that huffmanTable1 is better
+    def comparedBestCompressTable(self, freq_Table, huffmanTable1, huffmanTable2):
+        return self.estimatedHuffmanEncoded(freq_Table, huffmanTable1) < self.estimatedHuffmanEncoded(freq_Table, huffmanTable2)
+
+    def HuffmanTableBuilding(self, HuffmanTableTypeIndex):
+        if HuffmanTableTypeIndex == 1: ## use Define Table
+            self.HuffmanTable["DC"] = self.STD_HuffmanTable["DC"]
+            self.HuffmanTable["AC"] = self.STD_HuffmanTable["AC"]
+        else:
+            freq_DCs, freq_ACs = self.calc_WordFreq()
+            HuffmanTable = {"DC":[], "AC":[]}
+            HuffmanTable["DC"] = [self.generateHuffmanTable(freq_DCs[i]) for i in range(len(freq_DCs))]
+            HuffmanTable["AC"] = [self.generateHuffmanTable(freq_ACs[i]) for i in range(len(freq_ACs))]
+            if HuffmanTableTypeIndex == 0:
+                for i in range(min(len(HuffmanTable["DC"]), len(self.HuffmanTable["DC"]))):
+                    if self.comparedBestCompressTable(freq_DCs[i], HuffmanTable["DC"][i], self.STD_HuffmanTable["DC"][i]):
+                        self.HuffmanTable["DC"][i] = HuffmanTable["DC"][i]
+                    else:
+                        self.HuffmanTable["DC"][i] = self.STD_HuffmanTable["DC"][i]
+                for i in range(min(len(HuffmanTable["AC"]), len(self.HuffmanTable["AC"]))):
+                    if self.comparedBestCompressTable(freq_ACs[i], HuffmanTable["AC"][i], self.STD_HuffmanTable["AC"][i]):
+                        self.HuffmanTable["AC"][i] = HuffmanTable["AC"][i]
+                    else:
+                        self.HuffmanTable["AC"][i] = self.STD_HuffmanTable["AC"][i]
+            else:
+                self.HuffmanTable["DC"] = HuffmanTable["DC"]
+                self.HuffmanTable["AC"] = HuffmanTable["AC"]
 
     ### Encode prepare
     def _EntropyCodedStgment(self, codelen=8):
@@ -652,119 +799,7 @@ class JPEG():
             f.write(eoi.getbuffer())
         return True
 
-    def generateHuffmanTable(self, freq_Table):
-        huffmanTable = HuffmanTree(freq_Table).value_to_bitstring_table()
-        huffmanTable = list(huffmanTable.items())
-        huffmanTable.sort(key=lambda x: len(x[1]))
-        # print("[DEBIG]", huffmanTable)
-        return huffmanTable
-
-    def toJPEGHuffmanTable(self, HuffmanTable, DEBUG=False):
-        JPEG_HuffmanTable = {}
-        if len(HuffmanTable) == 0:
-            return JPEG_HuffmanTable
-        code_len = len(HuffmanTable[0][1])
-        code_val = 0b0
-        for i in range(len(HuffmanTable)):
-            key, code = HuffmanTable[i]
-            if DEBUG:
-                print(key, len(code))
-            if code_len != len(code):
-                code_val <<= (len(code)-code_len)
-                code_len = len(code)
-            elif i == len(HuffmanTable)-1:
-                code_val = code_val << 1 if code_len < 16 else code_val+1
-            JPEG_HuffmanTable[key] = "{:0{}b}".format(code_val, len(code))
-            code_val+=1
-        
-        return JPEG_HuffmanTable
-
-    def generateJPEGHuffmanTable(self, freq_Table, DEBUG=False):
-        if DEBUG:
-            print("=============================== [toJPEGHuffmanTable] ===============================")
-        Best_HuffmanTree = HuffmanTree(freq_Table)
-        if Best_HuffmanTree.mostLongCodeLen() <= 15:
-            return Best_HuffmanTree.create_huffman_table()
-        else:
-            Average_HuffmanTree = LimitedLenHuffmanTree(freq_Table)
-            return Average_HuffmanTree.create_huffman_table()
-
-    def stat_WordFreq(self):
-        stat_DCs = [[] for _ in range(max([comp["dc_table"] for comp in self.num_components])+1)]
-        stat_ACs = [[] for _ in range(max([comp["ac_table"] for comp in self.num_components])+1)]
-        i = 0
-        for mcu in self.MCUs:
-            i+=1
-            # print("#", i)
-            for comp_index in range(len(mcu)):
-                # print("##", comp_index)
-                comp = mcu[comp_index]
-                # print(comp)
-                # print("DPCM", "{:02x}".format(self.binaryCode(comp["DPCM"])[0]))
-                stat_DCs[self.num_components[comp_index]["dc_table"]].append("{:02x}".format(self.binaryCode(comp["DPCM"])[0]))
-                j = 0
-                for rle in comp["RLE"]:
-                    j+=1
-                    # print("RLE {}:".format(j), "{}{}".format(hex(rle[0])[-1], hex(self.binaryCode(rle[1])[0])[-1]))
-                    stat_ACs[self.num_components[comp_index]["ac_table"]].append("{}{}".format(hex(rle[0])[-1], hex(self.binaryCode(rle[1])[0])[-1]))
-
-        return stat_DCs, stat_ACs
-
-    def calc_WordFreq(self):
-        stat_DCs, stat_ACs = self.stat_WordFreq()
-        freq_DCs = [{} for _ in range(max([comp["dc_table"] for comp in self.num_components])+1)]
-        freq_ACs = [{} for _ in range(max([comp["ac_table"] for comp in self.num_components])+1)]
-        for i in range(len(stat_DCs)):
-            for j in range(len(stat_DCs[i])):
-                if stat_DCs[i][j] in freq_DCs[i]:
-                    freq_DCs[i][stat_DCs[i][j]] += 1
-                else:
-                    freq_DCs[i][stat_DCs[i][j]] = 1
-        for i in range(len(stat_ACs)):
-            for j in range(len(stat_ACs[i])):
-                if stat_ACs[i][j] in freq_ACs[i]:
-                    freq_ACs[i][stat_ACs[i][j]] += 1
-                else:
-                    freq_ACs[i][stat_ACs[i][j]] = 1
-        return freq_DCs, freq_ACs
-
-    def estimatedHuffmanEncoded(self, freq_Table, huffmanTable):
-        total_wordlen = 0
-        for key, freq in freq_Table.items():
-            total_wordlen += len(huffmanTable[key]*freq)
-        return total_wordlen
-
-    ## return the True is meaning that huffmanTable1 is better
-    def comparedBestCompressTable(self, freq_Table, huffmanTable1, huffmanTable2):
-        tb1_compress_size = self.estimatedHuffmanEncoded(freq_Table, huffmanTable1)
-        tb2_compress_size = self.estimatedHuffmanEncoded(freq_Table, huffmanTable2)
-        return tb1_compress_size < tb2_compress_size
-
-    def HuffmanTableBuilding(self, HuffmanTableTypeIndex):
-        # print("[DEBUG] # HuffmanTableBuilding")
-        freq_DCs, freq_ACs = self.calc_WordFreq()
-        HuffmanTable = {"DC":[], "AC":[]}
-        HuffmanTable["DC"] = [self.generateJPEGHuffmanTable(freq_DCs[i]) for i in range(len(freq_DCs))]
-        HuffmanTable["AC"] = [self.generateJPEGHuffmanTable(freq_ACs[i]) for i in range(len(freq_ACs))]
-        if HuffmanTableTypeIndex == 0:
-            for i in range(min(len(HuffmanTable["DC"]), len(self.HuffmanTable["DC"]))):
-                if self.comparedBestCompressTable(freq_DCs[i], HuffmanTable["DC"][i], self.STD_HuffmanTable["DC"][i]):
-                    self.HuffmanTable["DC"][i] = HuffmanTable["DC"][i]
-                else:
-                    self.HuffmanTable["DC"][i] = self.STD_HuffmanTable["DC"][i]
-            for i in range(min(len(HuffmanTable["AC"]), len(self.HuffmanTable["AC"]))):
-                if self.comparedBestCompressTable(freq_ACs[i], HuffmanTable["AC"][i], self.STD_HuffmanTable["AC"][i]):
-                    self.HuffmanTable["AC"][i] = HuffmanTable["AC"][i]
-                else:
-                    self.HuffmanTable["AC"][i] = self.STD_HuffmanTable["AC"][i]
-        elif HuffmanTableTypeIndex == 1: ## use Define Table
-            self.HuffmanTable["DC"] = self.STD_HuffmanTable["DC"]
-            self.HuffmanTable["AC"] = self.STD_HuffmanTable["AC"]
-            # return
-        else:
-            self.HuffmanTable["DC"] = HuffmanTable["DC"]
-            self.HuffmanTable["AC"] = HuffmanTable["AC"]
-
+    
 
     # return
     ## 1. length 
