@@ -1,8 +1,7 @@
 # JPEG
 ## Compression Flow Chart
 ![JPEG Compression Flow Chart](https://github.com/BRlin-o/JPEG/blob/main/img/JPEG壓縮流程.png)
-## Issues
-### [JPEG協會](https://jpeg.org/items/20150709_press.html)
+## Reseaerch
 
 ## Knowledge
 ### Color Space Transfor
@@ -31,5 +30,6 @@
 
 ## References
 ### [MROS/jpeg_tutorial](https://github.com/MROS/jpeg_tutorial)
+### [JPEG協會](https://jpeg.org/items/20150709_press.html)
 
 ## Tools
