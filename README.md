@@ -1,6 +1,6 @@
 # JPEG
 ## Compression Flow Chart
-![JPEG Compression Flow Chart](https://github.com/BRlin-o/img/JPEG壓縮流程.png)
+![JPEG Compression Flow Chart](https://github.com/BRlin-o/JPEG/img/JPEG壓縮流程.png)
 ## Issues
 ### [JPEG協會](https://jpeg.org/items/20150709_press.html)
 
